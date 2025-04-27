@@ -8,63 +8,64 @@ datasource db {
 }
 
 model Product {
-  id            Int             @id @default(autoincrement())
+  id            Int            @id @default(autoincrement())
   name          String
   price         Decimal        @db.Decimal(10, 2)
   originalPrice Decimal?       @db.Decimal(10, 2)
   description   String
-  imageUrl      String         @map("image_url")
+  image         String
   category      String
-  loyaltyPoints Int           @map("loyalty_points")
+  loyaltyPoints Int            @map("loyalty_points")
   stock         Int
   rating        Decimal?       @db.Decimal(2, 1)
   isNew         Boolean        @default(false) @map("is_new")
   isSale        Boolean        @default(false) @map("is_sale")
   createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  cartItems     CartItem[]
+  colors        ProductColor[]
   images        ProductImage[]
   sizes         ProductSize[]
-  colors        ProductColor[]
   reviews       Review[]
-  cartItems     CartItem[]
 
   @@map("products")
 }
 
 model ProductImage {
-  id        Int      @id @default(autoincrement())
-  productId Int      @map("product_id")
-  imageUrl  String   @map("image_url")
-  isPrimary Boolean  @default(false) @map("is_primary")
-  product   Product  @relation(fields: [productId], references: [id])
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
+  url       String
+  isPrimary Boolean @default(false) @map("is_primary")
+  product   Product @relation(fields: [productId], references: [id])
 
   @@map("product_images")
 }
 
 model ProductSize {
-  id        Int      @id @default(autoincrement())
-  productId Int      @map("product_id")
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
   size      String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
 
   @@unique([productId, size])
   @@map("product_sizes")
 }
 
 model ProductColor {
-  id        Int      @id @default(autoincrement())
-  productId Int      @map("product_id")
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
   name      String
   value     String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
 
   @@unique([productId, name])
   @@map("product_colors")
 }
 
 model LoyaltyTier {
-  name           String           @id
-  requiredPoints Int             @map("required_points")
-  multiplier     Decimal         @db.Decimal(3, 2)
+  name           String            @id
+  requiredPoints Int               @map("required_points")
+  multiplier     Decimal           @db.Decimal(3, 2)
   perks          LoyaltyTierPerk[]
 
   @@map("loyalty_tiers")
@@ -82,10 +83,11 @@ model LoyaltyTierPerk {
 model LoyaltyTransaction {
   id          Int      @id @default(autoincrement())
   date        DateTime
-  type        String
+  type        String   @db.VarChar(20)
   points      Int
   description String
-  status      String
+  status      String   @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("loyalty_transactions")
 }
@@ -94,25 +96,26 @@ model Coupon {
   id        Int      @id @default(autoincrement())
   code      String   @unique
   value     Decimal  @db.Decimal(10, 2)
-  type      String
+  type      String   @db.VarChar(20)
   expiresAt DateTime @map("expires_at")
   isUsed    Boolean  @default(false) @map("is_used")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("coupons")
 }
 
 model User {
-  id              Int       @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   name            String
-  email           String    @unique
+  email           String   @unique
   phone           String?
   address         String?
-  isLoyaltyMember Boolean   @default(false)
-  socialLinks     Json?     // Store social links as JSON
-  reviews         Review[]
+  isLoyaltyMember Boolean  @default(false) @map("is_loyalty_member")
+  socialLinks     Json?    @map("social_links")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
   cart            Cart?
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  reviews         Review[]
 
   @@map("users")
 }
@@ -120,27 +123,27 @@ model User {
 model Review {
   id        Int      @id @default(autoincrement())
   userId    Int
-  userName  String
+  userName  String   @map("user_name")
   rating    Int      @db.SmallInt
   comment   String
-  product   Product  @relation(fields: [productId], references: [id])
   productId Int
-  user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now()) @map("created_at")
+  product   Product  @relation(fields: [productId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 
   @@map("reviews")
 }
 
 model Cart {
-  id                    Int        @id @default(autoincrement())
-  userId                Int        @unique
-  user                  User       @relation(fields: [userId], references: [id])
-  items                 CartItem[]
-  subtotal              Decimal    @db.Decimal(10, 2)
-  total                 Decimal    @db.Decimal(10, 2)
-  estimatedLoyaltyPoints Int
-  createdAt             DateTime   @default(now()) @map("created_at")
-  updatedAt             DateTime   @updatedAt @map("updated_at")
+  id                     Int        @id @default(autoincrement())
+  userId                 Int        @unique
+  subtotal               Decimal    @db.Decimal(10, 2)
+  total                  Decimal    @db.Decimal(10, 2)
+  estimatedLoyaltyPoints Int        @map("estimated_loyalty_points")
+  createdAt              DateTime   @default(now()) @map("created_at")
+  updatedAt              DateTime   @updatedAt @map("updated_at")
+  items                  CartItem[]
+  user                   User       @relation(fields: [userId], references: [id])
 
   @@map("carts")
 }
@@ -148,14 +151,14 @@ model Cart {
 model CartItem {
   id        Int      @id @default(autoincrement())
   cartId    Int
-  cart      Cart     @relation(fields: [cartId], references: [id])
-  product   Product  @relation(fields: [productId], references: [id])
   productId Int
   quantity  Int
   size      String?
   color     String?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  cart      Cart     @relation(fields: [cartId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
 
   @@map("cart_items")
-} 
+}

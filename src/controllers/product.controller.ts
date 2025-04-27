@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Product, ProductImage, ProductSize, ProductColor } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/error.middleware';
 
 const prisma = new PrismaClient();
@@ -25,10 +25,44 @@ interface ProductResponse {
   isSale: boolean;
 }
 
-interface ProductWithRelations extends Product {
-  images: ProductImage[];
-  sizes: ProductSize[];
-  colors: ProductColor[];
+interface ProductImage {
+  url: string;
+  isPrimary: boolean;
+}
+
+interface ProductSize {
+  size: string;
+}
+
+interface ProductColor {
+  name: string;
+  value: string;
+}
+
+interface ProductWithRelations {
+  id: number;
+  name: string;
+  price: any; // Prisma Decimal type
+  originalPrice: any | null; // Prisma Decimal type
+  description: string;
+  image: string;
+  category: string;
+  loyaltyPoints: number;
+  stock: number;
+  rating: any | null; // Prisma Decimal type
+  isNew: boolean;
+  isSale: boolean;
+  images: Array<{
+    url: string;
+    isPrimary: boolean;
+  }>;
+  sizes: Array<{
+    size: string;
+  }>;
+  colors: Array<{
+    name: string;
+    value: string;
+  }>;
 }
 
 /**
@@ -129,7 +163,7 @@ export const getProductById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const product = await prisma.product.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: {
         images: true,
         sizes: true,
@@ -141,7 +175,26 @@ export const getProductById = async (req: Request, res: Response) => {
       throw new AppError('Product not found', 404);
     }
 
-    res.json(product);
+    res.json({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      originalPrice: product.originalPrice ? Number(product.originalPrice) : null,
+      description: product.description,
+      image: product.image,
+      images: product.images.map((img: ProductImage) => img.url),
+      category: product.category,
+      sizes: product.sizes.map((s: ProductSize) => s.size),
+      colors: product.colors.map((c: ProductColor) => ({
+        name: c.name,
+        value: c.value
+      })),
+      loyaltyPoints: product.loyaltyPoints,
+      stock: product.stock,
+      rating: product.rating ? Number(product.rating) : null,
+      isNew: product.isNew,
+      isSale: product.isSale
+    });
   } catch (error) {
     if (error instanceof AppError) {
       throw error;
@@ -167,23 +220,31 @@ export const productController = {
           take: Number(limit),
           orderBy: {
             [sortBy as string]: sortOrder
+          },
+          include: {
+            images: true,
+            sizes: true,
+            colors: true
           }
         }),
         prisma.product.count({ where })
       ]);
 
       res.json({
-        products: products.map((p): ProductResponse => ({
+        products: products.map((p: ProductWithRelations): ProductResponse => ({
           id: p.id,
           name: p.name,
           price: Number(p.price),
           originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
           description: p.description,
-          image: p.imageUrl,
-          images: [],
+          image: p.image,
+          images: p.images.map((img: { url: string }) => img.url),
           category: p.category,
-          sizes: [],
-          colors: [],
+          sizes: p.sizes.map((s: { size: string }) => s.size),
+          colors: p.colors.map((c: { name: string; value: string }) => ({
+            name: c.name,
+            value: c.value
+          })),
           loyaltyPoints: p.loyaltyPoints,
           stock: p.stock,
           rating: p.rating ? Number(p.rating) : null,
@@ -201,55 +262,84 @@ export const productController = {
     }
   },
 
-  getFeaturedProducts: async (req: Request, res: Response) => {
+  getProductById: async (req: Request, res: Response) => {
     try {
-      const { filter = 'all', limit = '10', offset = '0' } = req.query;
+      const { id } = req.params;
+      const product = await prisma.product.findUnique({
+        where: { id: Number(id) },
+        include: {
+          images: true,
+          sizes: true,
+          colors: true
+        }
+      });
 
-      const where: any = {};
-      if (filter === 'new') where.is_new = true;
-      if (filter === 'sale') where.is_sale = true;
-
-      const [products, total] = await Promise.all([
-        prisma.product.findMany({
-          where,
-          skip: Number(offset),
-          take: Number(limit),
-          orderBy: {
-            createdAt: 'desc'
-          },
-          include: {
-            images: true,
-            sizes: true,
-            colors: true
-          }
-        }),
-        prisma.product.count({ where })
-      ]);
+      if (!product) {
+        throw new AppError('Product not found', 404);
+      }
 
       res.json({
-        products: products.map(p => ({
-          id: p.id,
-          name: p.name,
-          price: Number(p.price),
-          originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
-          description: p.description,
-          image: p.imageUrl,
-          images: p.images.map(img => img.imageUrl),
-          category: p.category,
-          sizes: p.sizes.map(s => s.size),
-          colors: p.colors.map(c => ({
-            name: c.name,
-            value: c.value
-          })),
-          loyaltyPoints: p.loyaltyPoints,
-          stock: p.stock,
-          rating: p.rating ? Number(p.rating) : null,
-          isNew: p.isNew,
-          isSale: p.isSale
+        id: product.id,
+        name: product.name,
+        price: Number(product.price),
+        originalPrice: product.originalPrice ? Number(product.originalPrice) : null,
+        description: product.description,
+        image: product.image,
+        images: product.images.map((img: ProductImage) => img.url),
+        category: product.category,
+        sizes: product.sizes.map((s: ProductSize) => s.size),
+        colors: product.colors.map((c: ProductColor) => ({
+          name: c.name,
+          value: c.value
         })),
-        total,
-        hasMore: Number(offset) + Number(limit) < total
+        loyaltyPoints: product.loyaltyPoints,
+        stock: product.stock,
+        rating: product.rating ? Number(product.rating) : null,
+        isNew: product.isNew,
+        isSale: product.isSale
       });
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to fetch product', 500);
+    }
+  },
+
+  getFeaturedProducts: async (req: Request, res: Response) => {
+    try {
+      const products = await prisma.product.findMany({
+        where: {
+          isNew: true
+        },
+        take: 8,
+        include: {
+          images: true,
+          sizes: true,
+          colors: true
+        }
+      });
+
+      res.json(products.map((p: ProductWithRelations): ProductResponse => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price),
+        originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
+        description: p.description,
+        image: p.image,
+        images: p.images.map((img: { url: string }) => img.url),
+        category: p.category,
+        sizes: p.sizes.map((s: { size: string }) => s.size),
+        colors: p.colors.map((c: { name: string; value: string }) => ({
+          name: c.name,
+          value: c.value
+        })),
+        loyaltyPoints: p.loyaltyPoints,
+        stock: p.stock,
+        rating: p.rating ? Number(p.rating) : null,
+        isNew: p.isNew,
+        isSale: p.isSale
+      })));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -261,18 +351,11 @@ export const productController = {
   getProductImages: async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-
-      const images = await prisma.product_images.findMany({
-        where: { product_id: Number(id) }
+      const images = await prisma.productImage.findMany({
+        where: { productId: Number(id) }
       });
 
-      res.json({
-        images: images.map(i => ({
-          id: i.id,
-          url: i.image_url,
-          isPrimary: i.is_primary
-        }))
-      });
+      res.json(images.map((i: { url: string }) => i.url));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -284,14 +367,11 @@ export const productController = {
   getProductSizes: async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-
-      const sizes = await prisma.product_sizes.findMany({
-        where: { product_id: Number(id) }
+      const sizes = await prisma.productSize.findMany({
+        where: { productId: Number(id) }
       });
 
-      res.json({
-        sizes: sizes.map(s => s.size)
-      });
+      res.json(sizes.map((s: { size: string }) => s.size));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -303,17 +383,14 @@ export const productController = {
   getProductColors: async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-
-      const colors = await prisma.product_colors.findMany({
-        where: { product_id: Number(id) }
+      const colors = await prisma.productColor.findMany({
+        where: { productId: Number(id) }
       });
 
-      res.json({
-        colors: colors.map(c => ({
-          name: c.name,
-          value: c.value
-        }))
-      });
+      res.json(colors.map((c: { name: string; value: string }) => ({
+        name: c.name,
+        value: c.value
+      })));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -329,7 +406,7 @@ export const productController = {
       price,
       originalPrice,
       description,
-      imageUrl,
+      image,
       category,
       loyaltyPoints,
       stock,
@@ -347,7 +424,7 @@ export const productController = {
         price,
         originalPrice,
         description,
-        imageUrl,
+        image,
         category,
         loyaltyPoints,
         stock,
@@ -355,9 +432,9 @@ export const productController = {
         isNew,
         isSale,
         images: {
-          create: images?.map((image: { imageUrl: string; isPrimary: boolean }) => ({
-            imageUrl: image.imageUrl,
-            isPrimary: image.isPrimary,
+          create: images?.map((img: { url: string; isPrimary: boolean }) => ({
+            url: img.url,
+            isPrimary: img.isPrimary,
           })),
         },
         sizes: {
@@ -414,61 +491,41 @@ export const productController = {
   // Search products
   searchProducts: async (req: Request, res: Response) => {
     try {
-      const { 
-        category, 
-        isNew, 
-        isSale, 
-        limit = '10', 
-        offset = '0', 
-        sortBy = 'createdAt', 
-        sortOrder = 'desc' 
-      } = req.query;
-
-      const where: any = {};
-      if (category) where.category = category;
-      if (isNew === 'true') where.isNew = true;
-      if (isSale === 'true') where.isSale = true;
-
-      const orderBy: any = {};
-      switch (sortBy) {
-        case 'price':
-          orderBy.price = sortOrder;
-          break;
-        case 'rating':
-          orderBy.rating = sortOrder;
-          break;
-        case 'newest':
-          orderBy.createdAt = sortOrder;
-          break;
-        default:
-          orderBy.createdAt = 'desc';
-      }
-
-      const [products, total] = await Promise.all([
-        prisma.product.findMany({
-          where,
-          skip: Number(offset),
-          take: Number(limit),
-          orderBy
-        }),
-        prisma.product.count({ where })
-      ]);
-
-      res.json({
-        products: products.map(p => ({
-          id: p.id,
-          name: p.name,
-          price: Number(p.price),
-          originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
-          image: p.imageUrl,
-          category: p.category,
-          rating: p.rating ? Number(p.rating) : null,
-          isNew: p.isNew,
-          isSale: p.isSale
-        })),
-        total,
-        hasMore: Number(offset) + Number(limit) < total
+      const { query } = req.query;
+      const products = await prisma.product.findMany({
+        where: {
+          OR: [
+            { name: { contains: query as string } },
+            { description: { contains: query as string } }
+          ]
+        },
+        include: {
+          images: true,
+          sizes: true,
+          colors: true
+        }
       });
+
+      res.json(products.map((p: ProductWithRelations): ProductResponse => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price),
+        originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
+        description: p.description,
+        image: p.image,
+        images: p.images.map((img: { url: string }) => img.url),
+        category: p.category,
+        sizes: p.sizes.map((s: { size: string }) => s.size),
+        colors: p.colors.map((c: { name: string; value: string }) => ({
+          name: c.name,
+          value: c.value
+        })),
+        loyaltyPoints: p.loyaltyPoints,
+        stock: p.stock,
+        rating: p.rating ? Number(p.rating) : null,
+        isNew: p.isNew,
+        isSale: p.isSale
+      })));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;

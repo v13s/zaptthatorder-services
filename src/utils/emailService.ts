@@ -1,13 +1,10 @@
-interface EmailOptions {
+export interface EmailOptions {
   to: string;
   subject: string;
-  template: string;
-  data: Record<string, any>;
+  html: string;
 }
 
-export async function sendEmail(options: EmailOptions): Promise<void> {
+export const sendEmail = async (options: EmailOptions): Promise<void> => {
   // TODO: Implement actual email sending logic
   console.log('Sending email:', options);
-}
-
-export type { EmailOptions }; 
+}; 

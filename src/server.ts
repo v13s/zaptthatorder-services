@@ -8,9 +8,13 @@ import { errorHandler } from './middleware/error.middleware';
 import { authRoutes } from './routes/auth.routes';
 import { productRoutes } from './routes/product.routes';
 import { categoryRoutes } from './routes/category.routes';
-import { cartRoutes } from './routes/cart.routes';
+import cartRoutes from './routes/cart.routes';
 import { orderRoutes } from './routes/order.routes';
 import { loyaltyRoutes } from './routes/loyalty.routes';
+import { paymentRoutes } from './routes/payment.routes';
+import { shippingRoutes } from './routes/shipping.routes';
+import { validateRequest } from './middleware/validate.middleware';
+import { authenticate } from './middleware/auth.middleware';
 
 const app = express();
 
@@ -30,6 +34,8 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/shipping', shippingRoutes);
 
 // Error handling
 app.use(errorHandler);

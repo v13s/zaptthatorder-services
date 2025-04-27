@@ -60,7 +60,7 @@ interface PrismaLoyaltyReward {
   description: string;
   validity_days: number;
   type: string;
-  value: { toNumber: () => number };
+  value: number;
   is_active: boolean;
 }
 
@@ -72,18 +72,26 @@ interface PrismaLoyaltyTier {
 
 interface PrismaLoyaltyTransaction {
   id: number;
-  date: Date;
+  user_id: number;
   type: 'Earned' | 'Redeemed' | 'Cancelled' | 'Expired';
   points: number;
   description: string;
-  status: 'Completed' | 'Pending';
-  user_id: number;
+  status: string;
+  date: Date;
 }
 
 interface LoyaltyEnrollment {
   user_id: number;
   tier_name: string;
   enrolled_at: Date;
+}
+
+interface PrismaLoyaltyCoupon {
+  id: number;
+  code: string;
+  value: number;
+  type: string;
+  expires_at: Date;
 }
 
 const calculateTotalPoints = (transactions: LoyaltyTransaction[]): number => {
@@ -93,7 +101,7 @@ const calculateTotalPoints = (transactions: LoyaltyTransaction[]): number => {
 };
 
 export const loyaltyController = {
-  getLoyaltyStatus: async (req: Request, res: Response): Promise<void> => {
+  getLoyaltyStatus: async (req: Request, res: Response): Promise<LoyaltyStatus> => {
     try {
       const userId = req.user?.id ? Number(req.user.id) : null;
       if (!userId || isNaN(userId)) {
@@ -142,7 +150,7 @@ export const loyaltyController = {
         }
       });
 
-      const mappedTransactions: LoyaltyTransaction[] = transactions.map((t: Prisma.loyalty_transactionsGetPayload<{ select: typeof transactions[0]['select'] }>) => ({
+      const mappedTransactions: LoyaltyTransaction[] = transactions.map((t: PrismaLoyaltyTransaction) => ({
         id: Number(t.id),
         user_id: Number(t.user_id),
         type: t.type as 'Earned' | 'Redeemed',
@@ -191,6 +199,7 @@ export const loyaltyController = {
       }
 
       res.status(200).json(status);
+      return status;
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -211,9 +220,9 @@ export const loyaltyController = {
       res.json({
         title: `Welcome to ${status.tier.name} Tier!`,
         description: `You have ${status.points.available} points available.`,
-        ctaText: status.nextTier ? `Earn ${status.nextTier.remainingPoints} more points to reach ${status.nextTier.name} Tier` : 'You have reached the highest tier!',
+        ctaText: status.nextTier ? `Earn ${status.nextTier.required_points - status.points.available} more points to reach ${status.nextTier.name} Tier` : 'You have reached the highest tier!',
         ctaLink: status.nextTier ? '/products' : null,
-        pointsToNextTier: status.nextTier?.remainingPoints,
+        pointsToNextTier: status.nextTier ? status.nextTier.required_points - status.points.available : null,
         currentTier: status.tier.name,
         nextTier: status.nextTier?.name
       });
@@ -242,7 +251,7 @@ export const loyaltyController = {
       });
 
       res.json({
-        transactions: transactions.map(t => ({
+        transactions: transactions.map((t: PrismaLoyaltyTransaction) => ({
           id: t.id,
           date: t.date,
           type: t.type,
@@ -276,7 +285,7 @@ export const loyaltyController = {
       });
 
       res.json({
-        coupons: coupons.map(c => ({
+        coupons: coupons.map((c: PrismaLoyaltyCoupon) => ({
           id: c.id,
           code: c.code,
           value: c.value,
@@ -313,7 +322,7 @@ export const loyaltyController = {
         }
       });
 
-      const mappedRewards = rewards.map((r: Prisma.loyalty_rewardsGetPayload<{ select: typeof rewards[0]['select'] }>) => ({
+      const mappedRewards = rewards.map((r: PrismaLoyaltyReward) => ({
         id: Number(r.id),
         name: r.name,
         points: Number(r.points_required),
@@ -442,7 +451,7 @@ export const loyaltyController = {
         tier: {
           name: baseTier.name,
           multiplier: Number(baseTier.multiplier),
-          perks: perks.map(p => p.perk)
+          perks: perks.map((p: LoyaltyTierPerk) => p.perk)
         }
       });
     } catch (error) {
@@ -450,6 +459,103 @@ export const loyaltyController = {
         throw error;
       }
       throw new AppError('Failed to enroll in loyalty program', 500);
+    }
+  },
+
+  async getAllTiers(req: Request, res: Response) {
+    try {
+      const tiers = await prisma.loyaltyTier.findMany({
+        include: {
+          perks: true
+        }
+      });
+
+      res.json(tiers);
+    } catch (error) {
+      console.error('Error getting loyalty tiers:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+
+  async getTierByName(req: Request, res: Response) {
+    try {
+      const { name } = req.params;
+      const tier = await prisma.loyaltyTier.findUnique({
+        where: { name },
+        include: {
+          perks: true
+        }
+      });
+
+      if (!tier) {
+        return res.status(404).json({ message: 'Tier not found' });
+      }
+
+      res.json(tier);
+    } catch (error) {
+      console.error('Error getting loyalty tier:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+
+  async calculateTier(req: Request, res: Response) {
+    try {
+      const { points } = req.body;
+      const tiers = await prisma.loyaltyTier.findMany({
+        orderBy: {
+          required_points: 'asc'
+        }
+      });
+
+      let currentTier = null;
+      for (const tier of tiers) {
+        if (points >= tier.required_points) {
+          currentTier = tier;
+        } else {
+          break;
+        }
+      }
+
+      res.json({ tier: currentTier });
+    } catch (error) {
+      console.error('Error calculating tier:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+
+  async createTransaction(req: Request, res: Response) {
+    try {
+      const { user_id, type, points, description } = req.body;
+      const transaction = await prisma.loyaltyTransaction.create({
+        data: {
+          user_id,
+          type,
+          points,
+          description,
+          status: 'Pending'
+        }
+      });
+
+      res.status(201).json(transaction);
+    } catch (error) {
+      console.error('Error creating loyalty transaction:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+
+  async updateTransactionStatus(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const transaction = await prisma.loyaltyTransaction.update({
+        where: { id: Number(id) },
+        data: { status }
+      });
+
+      res.json(transaction);
+    } catch (error) {
+      console.error('Error updating transaction status:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 }; 

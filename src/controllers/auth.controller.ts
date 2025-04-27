@@ -25,7 +25,7 @@ export const authController = {
           id: true,
           name: true,
           email: true,
-          is_loyalty_member: true
+          isLoyaltyMember: true
         }
       });
 
@@ -38,7 +38,7 @@ export const authController = {
 
       res.json({
         isAuthenticated: true,
-        isLoyaltyMember: user.is_loyalty_member,
+        isLoyaltyMember: user.isLoyaltyMember,
         user: {
           id: user.id,
           name: user.name,

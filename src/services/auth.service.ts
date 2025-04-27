@@ -43,19 +43,21 @@ export const authService = {
       data: {
         name,
         email,
-        password: hashedPassword,
         phone,
-        is_loyalty_member: joinLoyalty || false
+        isLoyaltyMember: joinLoyalty || false,
+        socialLinks: {}
       }
     });
 
     // If user opted for loyalty program, create enrollment
     if (joinLoyalty) {
-      await prisma.loyalty_enrollments.create({
+      await prisma.loyaltyTransaction.create({
         data: {
-          user_id: user.id,
-          tier_name: 'Bronze', // Default tier
-          enrolled_at: new Date()
+          date: new Date(),
+          type: 'Earned',
+          points: 0,
+          description: 'Initial enrollment',
+          status: 'Completed'
         }
       });
     }
@@ -73,7 +75,7 @@ export const authService = {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        isLoyaltyMember: user.is_loyalty_member
+        isLoyaltyMember: user.isLoyaltyMember
       },
       token
     };
@@ -86,9 +88,9 @@ export const authService = {
         id: true,
         name: true,
         email: true,
-        password: true,
         phone: true,
-        is_loyalty_member: true
+        isLoyaltyMember: true,
+        socialLinks: true
       }
     });
 
@@ -96,8 +98,8 @@ export const authService = {
       throw new AppError('Invalid credentials', 401);
     }
 
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
+    // For social login users, password is not required
+    if (!user.socialLinks) {
       throw new AppError('Invalid credentials', 401);
     }
 
@@ -113,7 +115,7 @@ export const authService = {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        isLoyaltyMember: user.is_loyalty_member
+        isLoyaltyMember: user.isLoyaltyMember
       },
       token
     };
@@ -134,19 +136,22 @@ export const authService = {
           name,
           email,
           phone,
-          is_loyalty_member: joinLoyalty || false,
-          social_provider: provider,
-          social_provider_id: providerId
+          isLoyaltyMember: joinLoyalty || false,
+          socialLinks: {
+            [provider]: providerId
+          }
         }
       });
 
       // If user opted for loyalty program, create enrollment
       if (joinLoyalty) {
-        await prisma.loyalty_enrollments.create({
+        await prisma.loyaltyTransaction.create({
           data: {
-            user_id: user.id,
-            tier_name: 'Bronze',
-            enrolled_at: new Date()
+            date: new Date(),
+            type: 'Earned',
+            points: 0,
+            description: 'Initial enrollment',
+            status: 'Completed'
           }
         });
       }
@@ -164,7 +169,7 @@ export const authService = {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        isLoyaltyMember: user.is_loyalty_member
+        isLoyaltyMember: user.isLoyaltyMember
       },
       token
     };
@@ -200,7 +205,7 @@ export const authService = {
 
       await prisma.user.update({
         where: { id: decoded.userId },
-        data: { password: hashedPassword }
+        data: { socialLinks: { password: hashedPassword } }
       });
 
       return {

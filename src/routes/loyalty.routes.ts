@@ -30,4 +30,4 @@ router.get('/rewards', authenticate, loyaltyController.getLoyaltyRewards);
 router.post('/redeem', authenticate, loyaltyController.redeemPoints);
 router.post('/enroll', authenticate, loyaltyController.enrollInLoyalty);
 
-export default router; 
+export const loyaltyRoutes = router; 

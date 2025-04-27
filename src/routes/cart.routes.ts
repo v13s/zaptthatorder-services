@@ -1,24 +1,25 @@
 import { Router } from 'express';
 import { cartController } from '../controllers/cart.controller';
+import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Get cart summary
-router.get('/summary', cartController.getCartSummary);
+// Apply auth middleware to all cart routes
+router.use(authenticate);
 
-// Get cart items
-router.get('/items', cartController.getCartItems);
+// Get cart
+router.get('/', cartController.getCart);
 
 // Add item to cart
-router.post('/items', cartController.addCartItem);
+router.post('/items', cartController.addItem);
 
 // Update cart item
-router.put('/items/:id', cartController.updateCartItem);
+router.put('/items/:id', cartController.updateItem);
 
-// Remove cart item
-router.delete('/items/:id', cartController.removeCartItem);
+// Remove item from cart
+router.delete('/items/:id', cartController.removeItem);
 
 // Clear cart
-router.delete('/clear', cartController.clearCart);
+router.delete('/', cartController.clearCart);
 
-export const cartRoutes = router; 
+export default router; 

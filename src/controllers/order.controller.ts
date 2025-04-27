@@ -1,33 +1,125 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { AppError } from '../utils/AppError';
 import { sendEmail } from '../utils/emailService';
 
 const prisma = new PrismaClient();
 
 interface OrderWithRelations {
-  id: string;
-  userId: string;
+  id: number;
+  user_id: number;
   status: string;
-  total: number;
+  total_amount: number;
+  shipping_address: string;
+  payment_method: string;
+  created_at: Date;
   items: OrderItemWithProduct[];
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 interface OrderItemWithProduct {
-  id: string;
-  orderId: string;
-  productId: string;
+  id: number;
+  order_id: number;
+  product_id: number;
   quantity: number;
   price: number;
   product: {
+    id: number;
     name: string;
+    description: string;
     price: number;
+    image_url: string;
   };
 }
 
 export const orderController = {
+  async createOrder(req: Request, res: Response) {
+    try {
+      const { items, shipping_address, payment_method } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        throw new AppError('User not authenticated', 401);
+      }
+
+      // Validate items
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new AppError('Order must contain at least one item', 400);
+      }
+
+      // Calculate total amount
+      const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      // Create order with items in a transaction
+      const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // Create the order
+        const newOrder = await tx.order.create({
+          data: {
+            user_id: userId,
+            status: 'pending',
+            total_amount: totalAmount,
+            shipping_address,
+            payment_method,
+          },
+        });
+
+        // Create order items
+        const orderItems = await Promise.all(
+          items.map((item) =>
+            tx.orderItem.create({
+              data: {
+                order_id: newOrder.id,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                price: item.price,
+              },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    price: true,
+                    image_url: true,
+                  },
+                },
+              },
+            })
+          )
+        );
+
+        return {
+          ...newOrder,
+          items: orderItems,
+        };
+      });
+
+      // Send order confirmation email
+      await sendEmail({
+        to: req.user?.email || '',
+        subject: 'Order Confirmation',
+        html: `<h1>Thank you for your order!</h1><p>Your order ID is ${order.id}.</p>`,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: order,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({
+          success: false,
+          error: error.message,
+        });
+      } else {
+        console.error('Order creation error:', error);
+        res.status(500).json({
+          success: false,
+          error: 'Failed to create order',
+        });
+      }
+    }
+  },
+
   async getOrderHistory(req: Request, res: Response) {
     try {
       const userId = req.user?.id;

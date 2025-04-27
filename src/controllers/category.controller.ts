@@ -35,19 +35,19 @@ interface ProductResponse {
 interface ProductWithRelations {
   id: number;
   name: string;
-  price: number;
-  originalPrice: number | null;
+  price: any; // Prisma Decimal type
+  originalPrice: any | null; // Prisma Decimal type
   description: string;
-  imageUrl: string;
+  image: string;
   category: string;
   loyaltyPoints: number;
   stock: number;
-  rating: number | null;
+  rating: any | null; // Prisma Decimal type
   isNew: boolean;
   isSale: boolean;
   createdAt: Date;
   images: Array<{
-    imageUrl: string;
+    url: string;
   }>;
   sizes: Array<{
     size: string;
@@ -108,7 +108,7 @@ export const categoryController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to get category details');
+      throw new AppError('Failed to get category details', 500);
     }
   },
 
@@ -130,7 +130,7 @@ export const categoryController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to get categories');
+      throw new AppError('Failed to get categories', 500);
     }
   },
 
@@ -204,8 +204,8 @@ export const categoryController = {
           price: Number(p.price),
           originalPrice: p.originalPrice ? Number(p.originalPrice) : null,
           description: p.description,
-          image: p.imageUrl,
-          images: p.images.map(img => img.imageUrl),
+          image: p.image,
+          images: p.images.map(img => img.url),
           category: p.category,
           sizes: p.sizes.map(s => s.size),
           colors: p.colors.map(c => ({
@@ -225,7 +225,7 @@ export const categoryController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to get products by category');
+      throw new AppError('Failed to get products by category', 500);
     }
   }
 }; 

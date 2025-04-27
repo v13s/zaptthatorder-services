@@ -7,6 +7,9 @@ const router = Router();
 // Apply authentication middleware to all routes
 router.use(authenticate);
 
+// Order creation route
+router.post('/', orderController.createOrder);
+
 // Order history routes
 router.get('/', orderController.getOrderHistory);
 router.get('/:orderId', orderController.getOrderDetails);

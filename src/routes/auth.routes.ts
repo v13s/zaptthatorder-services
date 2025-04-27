@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authController } from '../controllers/auth.controller';
 import { validateRequest } from '../middleware/validate.middleware';
-import { body } from 'express-validator';
+import { check } from 'express-validator/check';
 
 const router = Router();
 
@@ -12,8 +12,8 @@ router.get('/status', authController.getAuthStatus);
 router.post(
   '/login',
   [
-    body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 6 })
+    check('email').isEmail().normalizeEmail(),
+    check('password').isLength({ min: 6 })
   ],
   validateRequest,
   authController.login
@@ -23,11 +23,11 @@ router.post(
 router.post(
   '/register',
   [
-    body('name').trim().notEmpty(),
-    body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 6 }),
-    body('phone').optional().isMobilePhone('any'),
-    body('joinLoyalty').optional().isBoolean()
+    check('name').trim().notEmpty(),
+    check('email').isEmail().normalizeEmail(),
+    check('password').isLength({ min: 6 }),
+    check('phone').optional().isMobilePhone('any'),
+    check('joinLoyalty').optional().isBoolean()
   ],
   validateRequest,
   authController.register
@@ -37,7 +37,7 @@ router.post(
 router.post(
   '/social/github',
   [
-    body('code').notEmpty()
+    check('code').notEmpty()
   ],
   validateRequest,
   authController.socialLogin
@@ -46,7 +46,7 @@ router.post(
 router.post(
   '/social/facebook',
   [
-    body('code').notEmpty()
+    check('code').notEmpty()
   ],
   validateRequest,
   authController.socialLogin
@@ -56,7 +56,7 @@ router.post(
 router.post(
   '/reset-password/request',
   [
-    body('email').isEmail().normalizeEmail()
+    check('email').isEmail().normalizeEmail()
   ],
   validateRequest,
   authController.requestPasswordReset
@@ -65,8 +65,8 @@ router.post(
 router.post(
   '/reset-password/verify',
   [
-    body('token').notEmpty(),
-    body('newPassword').isLength({ min: 6 })
+    check('token').notEmpty(),
+    check('newPassword').isLength({ min: 6 })
   ],
   validateRequest,
   authController.resetPassword
