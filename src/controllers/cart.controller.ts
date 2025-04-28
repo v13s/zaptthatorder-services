@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/error.middleware';
+import { addToCartSchema, updateCartItemSchema, AddToCartInput, UpdateCartItemInput } from '../validations/cart.validation';
 
 const prisma = new PrismaClient();
 
@@ -22,6 +23,22 @@ interface CartItemResponse {
     name: string;
     price: number;
     originalPrice: number | null;
+    image: string;
+    loyaltyPoints: number;
+  };
+}
+
+interface CartItemWithProduct {
+  id: number;
+  productId: number;
+  quantity: number;
+  size: string | null;
+  color: string | null;
+  product: {
+    id: number;
+    name: string;
+    price: any;
+    originalPrice: any | null;
     image: string;
     loyaltyPoints: number;
   };
@@ -65,7 +82,7 @@ export const cartController = {
         subtotal: Number(cart.subtotal),
         total: Number(cart.total),
         estimatedLoyaltyPoints: cart.estimatedLoyaltyPoints,
-        items: cart.items.map((item: { id: number; productId: number; quantity: number; size: string | null; color: string | null; product: { id: number; name: string; price: Prisma.Decimal; originalPrice: Prisma.Decimal | null; image: string; loyaltyPoints: number } }) => ({
+        items: cart.items.map((item: CartItemWithProduct): CartItemResponse => ({
           id: item.id,
           productId: item.productId,
           quantity: item.quantity,
@@ -96,7 +113,8 @@ export const cartController = {
         throw new AppError('Unauthorized', 401);
       }
 
-      const { productId, quantity, size, color } = req.body;
+      const validatedData = addToCartSchema.parse(req.body) as AddToCartInput;
+      const { productId, quantity, size, color } = validatedData;
 
       // Get or create cart
       let cart = await prisma.cart.findUnique({
@@ -187,6 +205,9 @@ export const cartController = {
       if (error instanceof AppError) {
         throw error;
       }
+      if (error instanceof Error && error.name === 'ZodError') {
+        throw new AppError('Invalid input data', 400);
+      }
       throw new AppError('Failed to add item to cart', 500);
     }
   },
@@ -199,7 +220,8 @@ export const cartController = {
       }
 
       const { id } = req.params;
-      const { quantity, size, color } = req.body;
+      const validatedData = updateCartItemSchema.parse(req.body) as UpdateCartItemInput;
+      const { quantity, size, color } = validatedData;
 
       const cart = await prisma.cart.findUnique({
         where: { userId: req.user.id }
@@ -281,6 +303,9 @@ export const cartController = {
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
+      }
+      if (error instanceof Error && error.name === 'ZodError') {
+        throw new AppError('Invalid input data', 400);
       }
       throw new AppError('Failed to update cart item', 500);
     }

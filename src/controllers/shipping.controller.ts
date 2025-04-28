@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient, ShippingOption as PrismaShippingOption } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/error.middleware';
 
 const prisma = new PrismaClient();
@@ -11,6 +11,16 @@ interface ShippingOption {
   estimatedDays: number;
   description: string;
 }
+
+type PrismaShippingOption = {
+  id: number;
+  name: string;
+  price: any;
+  estimatedDays: number;
+  description: string;
+  isActive: boolean;
+  createdAt: Date;
+};
 
 export const shippingController = {
   getShippingOptions: async (req: Request, res: Response) => {
@@ -66,6 +76,46 @@ export const shippingController = {
         throw error;
       }
       throw new AppError('Failed to calculate shipping', 500);
+    }
+  },
+
+  trackShipment: async (req: Request, res: Response) => {
+    try {
+      const { trackingNumber } = req.params;
+
+      // In a real application, you would:
+      // 1. Call shipping carrier's API to get tracking info
+      // 2. Parse and format the response
+      // 3. Return tracking details
+
+      // For now, we'll return mock data
+      res.json({
+        status: 'In Transit',
+        location: 'Local Delivery Facility',
+        estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        history: [
+          {
+            status: 'Order Placed',
+            location: 'Online',
+            timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            status: 'Picked Up',
+            location: 'Warehouse',
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            status: 'In Transit',
+            location: 'Local Delivery Facility',
+            timestamp: new Date().toISOString()
+          }
+        ]
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to track shipment', 500);
     }
   }
 }; 

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { AppError } from '../middleware/error.middleware';
@@ -26,60 +26,94 @@ export const authService = {
   async registerUser(input: UserInput) {
     const { name, email, password, phone, joinLoyalty } = input;
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
+    return await prisma.$transaction(async (tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">) => {
+      // Check if user already exists
+      const existingUser = await tx.user.findUnique({
+        where: { email }
+      });
 
-    if (existingUser) {
-      throw new AppError('Email already registered', 400);
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        phone,
-        isLoyaltyMember: joinLoyalty || false,
-        socialLinks: {}
+      if (existingUser) {
+        throw new AppError('Email already registered', 400);
       }
-    });
 
-    // If user opted for loyalty program, create enrollment
-    if (joinLoyalty) {
-      await prisma.loyaltyTransaction.create({
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Create user
+      const user = await tx.user.create({
         data: {
-          userId: user.id,
-          date: new Date(),
-          type: 'Earned',
-          points: 0,
-          description: 'Initial enrollment',
-          status: 'Completed'
+          name,
+          email,
+          phone,
+          password: hashedPassword,
+          isLoyaltyMember: joinLoyalty || false,
+          socialLinks: {}
         }
       });
-    }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id },
-      process.env.JWT_SECRET!,
-      { expiresIn: '24h' }
-    );
+      // If user opted for loyalty program
+      if (joinLoyalty) {
+        // Check if we have any loyalty tiers
+        const defaultTier = await tx.loyaltyTier.findFirst({
+          where: { name: 'Bronze' }
+        });
 
-    return {
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        isLoyaltyMember: user.isLoyaltyMember
-      },
-      token
-    };
+        // Create default tier if it doesn't exist
+        if (!defaultTier) {
+          await tx.loyaltyTier.create({
+            data: {
+              name: 'Bronze',
+              requiredPoints: 0,
+              multiplier: 1.0,
+              perks: {
+                create: [
+                  { perk: 'Earn 1 point per dollar spent' },
+                  { perk: 'Birthday bonus points' }
+                ]
+              }
+            }
+          });
+        }
+
+        // Create loyalty enrollment
+        await tx.loyaltyEnrollment.create({
+          data: {
+            userId: user.id,
+            tierName: 'Bronze'
+          }
+        });
+
+        // Create initial loyalty transaction
+        await tx.loyaltyTransaction.create({
+          data: {
+            userId: user.id,
+            date: new Date(),
+            type: 'Earned',
+            points: 0,
+            description: 'Initial enrollment',
+            status: 'Completed'
+          }
+        });
+      }
+
+      // Generate JWT token
+      const token = jwt.sign(
+        { id: user.id, email: user.email },
+        process.env.JWT_SECRET!,
+        { expiresIn: '24h' }
+      );
+
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          isLoyaltyMember: user.isLoyaltyMember
+        },
+        token
+      };
+    });
   },
 
   async loginUser(email: string, password: string) {
@@ -90,6 +124,7 @@ export const authService = {
         name: true,
         email: true,
         phone: true,
+        password: true,
         isLoyaltyMember: true,
         socialLinks: true
       }
@@ -100,12 +135,18 @@ export const authService = {
     }
 
     // For social login users, password is not required
-    if (!user.socialLinks) {
+    if (Object.keys(user.socialLinks || {}).length > 0) {
+      throw new AppError('Please use social login', 401);
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password || '');
+    if (!isValidPassword) {
       throw new AppError('Invalid credentials', 401);
     }
 
     const token = jwt.sign(
-      { userId: user.id },
+      { id: user.id, email: user.email },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     );
@@ -160,7 +201,7 @@ export const authService = {
     }
 
     const token = jwt.sign(
-      { userId: user.id },
+      { id: user.id, email: user.email },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     );

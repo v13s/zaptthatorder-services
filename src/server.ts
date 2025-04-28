@@ -7,13 +7,14 @@ import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middleware/error.middleware';
 import { authRoutes } from './routes/auth.routes';
 import { productRoutes } from './routes/product.routes';
-import { categoryRoutes } from './routes/category.routes';
+import categoryRoutes from './routes/category.routes';
 import { profileRoutes } from './routes/profile.routes';
 import cartRoutes from './routes/cart.routes';
 import { orderRoutes } from './routes/order.routes';
 import { loyaltyRoutes } from './routes/loyalty.routes';
 import { paymentRoutes } from './routes/payment.routes';
 import { shippingRoutes } from './routes/shipping.routes';
+import { reviewRoutes } from './routes/review.routes';
 import { validateRequest } from './middleware/validate.middleware';
 import { authenticate } from './middleware/auth.middleware';
 
@@ -38,6 +39,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/shipping', shippingRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Error handling
 app.use(errorHandler);

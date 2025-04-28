@@ -142,5 +142,23 @@ export const couponController = {
     });
 
     res.json(coupons);
+  },
+
+  // Update a coupon
+  async updateCoupon(req: Request, res: Response) {
+    const { code } = req.params;
+    const { value, type, expiresAt, isUsed } = req.body;
+
+    const coupon = await prisma.coupon.update({
+      where: { code },
+      data: {
+        value,
+        type,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        isUsed
+      },
+    });
+
+    res.json(coupon);
   }
 }; 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { AppError } from '../middleware/error.middleware';
+import { Decimal } from '@prisma/client/runtime/library';
 
 const prisma = new PrismaClient();
 
@@ -36,10 +37,10 @@ interface LoyaltyTier {
   name: string;
   requiredPoints: number;
   multiplier: number;
+  perks: string[];
 }
 
 interface LoyaltyTierPerk {
-  tierName: string;
   perk: string;
 }
 
@@ -116,82 +117,42 @@ export const loyaltyController = {
       }
 
       const enrollment = await prisma.loyaltyEnrollment.findUnique({
-        where: { userId }
+        where: { userId },
+        include: {
+          tier: {
+            include: {
+              perks: true
+            }
+          }
+        }
       });
 
       if (!enrollment) {
         throw new AppError('User not enrolled in loyalty program', 404);
       }
 
-      const tier = await prisma.loyaltyTier.findUnique({
-        where: { name: enrollment.tierName },
-        select: {
-          name: true,
-          requiredPoints: true,
-          multiplier: true
-        }
-      });
-
-      if (!tier) {
-        throw new AppError('Tier not found', 404);
-      }
-
-      const perks = await prisma.loyaltyTierPerk.findMany({
-        where: { tierName: tier.name },
-        select: {
-          tierName: true,
-          perk: true
-        }
-      });
-
       const transactions = await prisma.loyaltyTransaction.findMany({
-        where: { userId },
-        select: {
-          id: true,
-          userId: true,
-          type: true,
-          points: true,
-          description: true,
-          status: true,
-          date: true,
-          createdAt: true
-        }
+        where: { userId }
       });
 
-      const mappedTransactions = transactions.map((t) => ({
-        id: t.id,
-        userId: t.userId,
-        type: t.type,
-        points: t.points,
-        description: t.description,
-        status: t.status,
-        date: t.date,
-        createdAt: t.createdAt
-      }));
-
-      const totalPoints = calculateTotalPoints(mappedTransactions);
+      const totalPoints = calculateTotalPoints(transactions);
 
       const nextTier = await prisma.loyaltyTier.findFirst({
         where: {
           requiredPoints: {
-            gt: tier.requiredPoints
+            gt: enrollment.tier.requiredPoints
           }
         },
         orderBy: {
           requiredPoints: 'asc'
-        },
-        select: {
-          name: true,
-          requiredPoints: true,
-          multiplier: true
         }
       });
 
       const status: LoyaltyStatus = {
         tier: {
-          name: tier.name,
-          multiplier: Number(tier.multiplier),
-          perks: perks.map((p) => p.perk)
+          name: enrollment.tier.name,
+          multiplier: Number(enrollment.tier.multiplier),
+          perks: enrollment.tier.perks.map((p: { perk: string }) => p.perk)
         },
         points: {
           available: totalPoints,
@@ -251,10 +212,8 @@ export const loyaltyController = {
       }
 
       const transactions = await prisma.loyaltyTransaction.findMany({
-        where: { userId },
-        orderBy: {
-          date: 'desc'
-        }
+        where: { userId: Number(userId) },
+        orderBy: { date: 'desc' }
       });
 
       res.json(transactions);
@@ -413,22 +372,31 @@ export const loyaltyController = {
     }
   },
 
-  async getAllTiers(req: Request, res: Response) {
+  getAllTiers: async (req: Request, res: Response) => {
     try {
       const tiers = await prisma.loyaltyTier.findMany({
         include: {
           perks: true
+        },
+        orderBy: {
+          requiredPoints: 'asc'
         }
       });
 
-      res.json(tiers);
+      const formattedTiers: LoyaltyTier[] = tiers.map((tier: { name: string; requiredPoints: number; multiplier: Decimal; perks: { perk: string }[] }) => ({
+        name: tier.name,
+        requiredPoints: tier.requiredPoints,
+        multiplier: Number(tier.multiplier),
+        perks: tier.perks.map((p: { perk: string }) => p.perk)
+      }));
+
+      res.json(formattedTiers);
     } catch (error) {
-      console.error('Error getting loyalty tiers:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      throw new AppError('Failed to get loyalty tiers', 500);
     }
   },
 
-  async getTierByName(req: Request, res: Response) {
+  getTierByName: async (req: Request, res: Response) => {
     try {
       const { name } = req.params;
       const tier = await prisma.loyaltyTier.findUnique({
@@ -439,58 +407,74 @@ export const loyaltyController = {
       });
 
       if (!tier) {
-        return res.status(404).json({ message: 'Tier not found' });
+        throw new AppError('Tier not found', 404);
       }
 
-      res.json(tier);
+      const formattedTier: LoyaltyTier = {
+        name: tier.name,
+        requiredPoints: tier.requiredPoints,
+        multiplier: Number(tier.multiplier),
+        perks: tier.perks.map((p: { perk: string }) => p.perk)
+      };
+
+      res.json(formattedTier);
     } catch (error) {
-      console.error('Error getting loyalty tier:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to get tier details', 500);
     }
   },
 
-  async calculateTier(req: Request, res: Response) {
+  calculateTier: async (req: Request, res: Response) => {
     try {
-      const { points } = req.body;
+      const points = Number(req.query.points);
+      if (isNaN(points)) {
+        throw new AppError('Invalid points value', 400);
+      }
+
       const tiers = await prisma.loyaltyTier.findMany({
         orderBy: {
-          requiredPoints: 'asc'
+          requiredPoints: 'desc'
         }
       });
 
-      let currentTier = null;
-      for (const tier of tiers) {
-        if (points >= tier.requiredPoints) {
-          currentTier = tier;
-        } else {
-          break;
-        }
+      const currentTier = tiers.find((tier: { requiredPoints: number }) => points >= tier.requiredPoints);
+      const nextTier = tiers.find((tier: { requiredPoints: number }) => tier.requiredPoints > points);
+
+      if (!currentTier) {
+        throw new AppError('No tier found for the given points', 404);
       }
 
-      res.json({ tier: currentTier });
+      res.json({
+        tier: currentTier.name,
+        nextTier: nextTier?.name,
+        pointsToNextTier: nextTier ? nextTier.requiredPoints - points : 0
+      });
     } catch (error) {
-      console.error('Error calculating tier:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to calculate tier', 500);
     }
   },
 
-  async createTransaction(req: Request, res: Response) {
+  createTransaction: async (req: Request, res: Response) => {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        throw new AppError('User not authenticated', 401);
-      }
+      const { userId, type, points, description } = req.body;
 
-      const { type, points, description, status } = req.body;
+      if (!['Earned', 'Redeemed', 'Cancelled', 'Expired'].includes(type)) {
+        throw new AppError('Invalid transaction type', 400);
+      }
 
       const transaction = await prisma.loyaltyTransaction.create({
         data: {
           userId: Number(userId),
-          date: new Date(),
           type,
-          points,
+          points: Number(points),
           description,
-          status
+          status: 'Completed',
+          date: new Date()
         }
       });
 
@@ -499,14 +483,19 @@ export const loyaltyController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to create loyalty transaction', 500);
+      throw new AppError('Failed to create transaction', 500);
     }
   },
 
-  async updateTransactionStatus(req: Request, res: Response) {
+  updateTransactionStatus: async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
+
+      if (!['Pending', 'Completed', 'Cancelled', 'Failed'].includes(status)) {
+        throw new AppError('Invalid status', 400);
+      }
+
       const transaction = await prisma.loyaltyTransaction.update({
         where: { id: Number(id) },
         data: { status }
@@ -514,8 +503,10 @@ export const loyaltyController = {
 
       res.json(transaction);
     } catch (error) {
-      console.error('Error updating transaction status:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to update transaction status', 500);
     }
   },
 
@@ -622,6 +613,147 @@ export const loyaltyController = {
         throw error;
       }
       throw new AppError('Failed to redeem points', 500);
+    }
+  },
+
+  createTier: async (req: Request, res: Response) => {
+    try {
+      const { name, requiredPoints, multiplier, perks } = req.body;
+
+      // Check if tier with same name already exists
+      const existingTier = await prisma.loyaltyTier.findUnique({
+        where: { name }
+      });
+
+      if (existingTier) {
+        throw new AppError('Tier with this name already exists', 409);
+      }
+
+      // Create tier and its perks in a transaction
+      const result = await prisma.$transaction(async (tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">) => {
+        // Create the tier
+        const tier = await tx.loyaltyTier.create({
+          data: {
+            name,
+            requiredPoints,
+            multiplier
+          }
+        });
+
+        // Create the perks
+        if (perks && perks.length > 0) {
+          await tx.loyaltyTierPerk.createMany({
+            data: perks.map((perk: string) => ({
+              tierName: name,
+              perk
+            }))
+          });
+        }
+
+        return tier;
+      });
+
+      res.status(201).json({
+        name: result.name,
+        requiredPoints: result.requiredPoints,
+        multiplier: Number(result.multiplier),
+        perks: perks || []
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to create loyalty tier', 500);
+    }
+  },
+
+  updateTier: async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+      const { requiredPoints, multiplier, perks } = req.body;
+
+      if (!requiredPoints && !multiplier && !perks) {
+        throw new AppError('No fields to update', 400);
+      }
+
+      // Check if tier exists
+      const existingTier = await prisma.loyaltyTier.findUnique({
+        where: { name },
+        include: { perks: true }
+      });
+
+      if (!existingTier) {
+        throw new AppError('Tier not found', 404);
+      }
+
+      // Update tier
+      const updatedTier = await prisma.loyaltyTier.update({
+        where: { name },
+        data: {
+          requiredPoints,
+          multiplier,
+          perks: perks ? {
+            deleteMany: {},
+            create: perks.map((perk: string) => ({ perk }))
+          } : undefined
+        },
+        include: {
+          perks: true
+        }
+      });
+
+      res.status(200).json({
+        message: 'Tier updated successfully',
+        tier: {
+          name: updatedTier.name,
+          requiredPoints: updatedTier.requiredPoints,
+          multiplier: Number(updatedTier.multiplier),
+          perks: updatedTier.perks.map((p: LoyaltyTierPerk) => p.perk)
+        }
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to update tier', 500);
+    }
+  },
+
+  deleteTier: async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+
+      // Check if tier exists
+      const existingTier = await prisma.loyaltyTier.findUnique({
+        where: { name }
+      });
+
+      if (!existingTier) {
+        throw new AppError('Tier not found', 404);
+      }
+
+      // Check if tier is in use
+      const enrollments = await prisma.loyaltyEnrollment.findMany({
+        where: { tierName: name }
+      });
+
+      if (enrollments.length > 0) {
+        throw new AppError('Cannot delete tier that is in use', 400);
+      }
+
+      // Delete tier and its perks
+      await prisma.loyaltyTier.delete({
+        where: { name }
+      });
+
+      res.status(200).json({
+        message: 'Tier deleted successfully'
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to delete tier', 500);
     }
   }
 }; 
