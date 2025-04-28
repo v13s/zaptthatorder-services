@@ -33,7 +33,7 @@ export const couponController = {
     });
 
     if (!coupon) {
-      throw new AppError(404, 'Coupon not found');
+      throw new AppError('Coupon not found', 404);
     }
 
     res.json(coupon);
@@ -48,7 +48,7 @@ export const couponController = {
     });
 
     if (existingCoupon) {
-      throw new AppError(409, 'Coupon code already exists');
+      throw new AppError('Coupon code already exists', 409);
     }
 
     const coupon = await prisma.coupon.create({
@@ -74,20 +74,20 @@ export const couponController = {
     });
 
     if (!coupon) {
-      throw new AppError(404, 'Coupon not found');
+      throw new AppError('Coupon not found', 404);
     }
 
     if (coupon.isUsed) {
-      throw new AppError(400, 'Coupon has already been used');
+      throw new AppError('Coupon has already been used', 400);
     }
 
     if (new Date() > new Date(coupon.expiresAt)) {
-      throw new AppError(400, 'Coupon has expired');
+      throw new AppError('Coupon has expired', 400);
     }
 
     const discountAmount = coupon.type === 'Percentage'
-      ? (orderAmount * coupon.value) / 100
-      : coupon.value;
+      ? (orderAmount * Number(coupon.value)) / 100
+      : Number(coupon.value);
 
     res.json({
       isValid: true,
@@ -118,4 +118,29 @@ export const couponController = {
 
     res.status(204).send();
   },
+
+  // Get loyalty coupons for a user
+  async getLoyaltyCoupons(req: Request, res: Response) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    const coupons = await prisma.coupon.findMany({
+      where: {
+        code: {
+          startsWith: 'LOYALTY-'
+        },
+        isUsed: false,
+        expiresAt: {
+          gt: new Date()
+        }
+      },
+      orderBy: {
+        expiresAt: 'asc'
+      }
+    });
+
+    res.json(coupons);
+  }
 }; 

@@ -27,6 +27,7 @@ model Product {
   images        ProductImage[]
   sizes         ProductSize[]
   reviews       Review[]
+  orderItems    OrderItem[]
 
   @@map("products")
 }
@@ -67,6 +68,7 @@ model LoyaltyTier {
   requiredPoints Int               @map("required_points")
   multiplier     Decimal           @db.Decimal(3, 2)
   perks          LoyaltyTierPerk[]
+  enrollments    LoyaltyEnrollment[]
 
   @@map("loyalty_tiers")
 }
@@ -82,24 +84,28 @@ model LoyaltyTierPerk {
 
 model LoyaltyTransaction {
   id          Int      @id @default(autoincrement())
+  userId      Int
   date        DateTime
   type        String   @db.VarChar(20)
   points      Int
   description String
   status      String   @db.VarChar(20)
   createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id])
 
   @@map("loyalty_transactions")
 }
 
 model Coupon {
   id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
   code      String   @unique
   value     Decimal  @db.Decimal(10, 2)
   type      String   @db.VarChar(20)
   expiresAt DateTime @map("expires_at")
   isUsed    Boolean  @default(false) @map("is_used")
   createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
 
   @@map("coupons")
 }
@@ -116,6 +122,10 @@ model User {
   updatedAt       DateTime @updatedAt @map("updated_at")
   cart            Cart?
   reviews         Review[]
+  orders          Order[]
+  loyaltyEnrollment LoyaltyEnrollment?
+  loyaltyTransactions LoyaltyTransaction[]
+  coupons         Coupon[]
 
   @@map("users")
 }
@@ -161,4 +171,79 @@ model CartItem {
   product   Product  @relation(fields: [productId], references: [id])
 
   @@map("cart_items")
+}
+
+model Order {
+  id              Int         @id @default(autoincrement())
+  userId          Int
+  status          String      @db.VarChar(20)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  shippingAddress String
+  paymentMethod   String      @db.VarChar(50)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  items           OrderItem[]
+  user            User        @relation(fields: [userId], references: [id])
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  productId  Int
+  quantity   Int
+  price      Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+  order      Order    @relation(fields: [orderId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model LoyaltyEnrollment {
+  userId      Int      @id
+  tierName    String
+  enrolledAt  DateTime @default(now()) @map("enrolled_at")
+  user        User     @relation(fields: [userId], references: [id])
+  tier        LoyaltyTier @relation(fields: [tierName], references: [name])
+
+  @@map("loyalty_enrollments")
+}
+
+model LoyaltyReward {
+  id             Int      @id @default(autoincrement())
+  name           String
+  pointsRequired Int      @map("points_required")
+  description    String
+  validityDays   Int      @map("validity_days")
+  type           String   @db.VarChar(20)
+  value          Decimal  @db.Decimal(10, 2)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("loyalty_rewards")
+}
+
+model PaymentMethod {
+  id          Int      @id @default(autoincrement())
+  name        String
+  icon        String
+  description String
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("payment_methods")
+}
+
+model ShippingOption {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  price       Decimal  @db.Decimal(10, 2)
+  estimatedDays Int    @map("estimated_days")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("shipping_options")
 }

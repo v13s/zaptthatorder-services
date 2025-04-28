@@ -1,25 +1,25 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { AppError } from '../utils/AppError';
+import { AppError } from '../middleware/error.middleware';
 import { sendEmail } from '../utils/emailService';
 
 const prisma = new PrismaClient();
 
 interface OrderWithRelations {
   id: number;
-  user_id: number;
+  userId: number;
   status: string;
-  total_amount: number;
-  shipping_address: string;
-  payment_method: string;
-  created_at: Date;
+  totalAmount: number;
+  shippingAddress: string;
+  paymentMethod: string;
+  createdAt: Date;
   items: OrderItemWithProduct[];
 }
 
 interface OrderItemWithProduct {
   id: number;
-  order_id: number;
-  product_id: number;
+  orderId: number;
+  productId: number;
   quantity: number;
   price: number;
   product: {
@@ -27,14 +27,14 @@ interface OrderItemWithProduct {
     name: string;
     description: string;
     price: number;
-    image_url: string;
+    image: string;
   };
 }
 
 export const orderController = {
   async createOrder(req: Request, res: Response) {
     try {
-      const { items, shipping_address, payment_method } = req.body;
+      const { items, shippingAddress, paymentMethod } = req.body;
       const userId = req.user?.id;
 
       if (!userId) {
@@ -50,15 +50,15 @@ export const orderController = {
       const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
       // Create order with items in a transaction
-      const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const order = await prisma.$transaction(async (tx) => {
         // Create the order
         const newOrder = await tx.order.create({
           data: {
-            user_id: userId,
+            userId: userId,
             status: 'pending',
-            total_amount: totalAmount,
-            shipping_address,
-            payment_method,
+            totalAmount: totalAmount,
+            shippingAddress,
+            paymentMethod,
           },
         });
 
@@ -67,8 +67,8 @@ export const orderController = {
           items.map((item) =>
             tx.orderItem.create({
               data: {
-                order_id: newOrder.id,
-                product_id: item.product_id,
+                orderId: newOrder.id,
+                productId: item.productId,
                 quantity: item.quantity,
                 price: item.price,
               },
@@ -79,7 +79,7 @@ export const orderController = {
                     name: true,
                     description: true,
                     price: true,
-                    image_url: true,
+                    image: true,
                   },
                 },
               },
@@ -128,7 +128,7 @@ export const orderController = {
       }
 
       const orders = await prisma.order.findMany({
-        where: { userId },
+        where: { userId: userId },
         include: {
           items: {
             include: {
@@ -167,8 +167,8 @@ export const orderController = {
 
       const order = await prisma.order.findFirst({
         where: {
-          id: orderId,
-          userId
+          id: parseInt(orderId),
+          userId: userId
         },
         include: {
           items: {
@@ -209,8 +209,8 @@ export const orderController = {
 
       const order = await prisma.order.findFirst({
         where: {
-          id: orderId,
-          userId
+          id: parseInt(orderId),
+          userId: userId
         }
       });
 
@@ -223,7 +223,7 @@ export const orderController = {
       }
 
       const updatedOrder = await prisma.order.update({
-        where: { id: orderId },
+        where: { id: parseInt(orderId) },
         data: { status: 'CANCELLED' }
       });
 
@@ -248,8 +248,8 @@ export const orderController = {
 
       const order = await prisma.order.findFirst({
         where: {
-          id: orderId,
-          userId
+          id: parseInt(orderId),
+          userId: userId
         },
         include: {
           items: {

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { validationResult, ValidationError } from 'express-validator';
+import { validationResult } from 'express-validator/check';
 import { AppError } from './error.middleware';
 
 export const validateRequest = (
@@ -10,7 +10,7 @@ export const validateRequest = (
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new AppError(
-      errors.array().map((err: ValidationError) => err.msg).join(', '),
+      errors.array().map((err: any) => err.msg).join(', '),
       400
     );
   }

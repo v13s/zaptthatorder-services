@@ -16,41 +16,43 @@ interface LoyaltyStatus {
   };
   nextTier?: {
     name: string;
-    required_points: number;
+    requiredPoints: number;
     multiplier: number;
   };
 }
 
 interface LoyaltyTransaction {
   id: number;
-  user_id: number;
-  type: 'Earned' | 'Redeemed';
+  userId: number;
+  date: Date;
+  type: string;
   points: number;
   description: string;
   status: string;
-  date: Date;
+  createdAt: Date;
 }
 
 interface LoyaltyTier {
   name: string;
-  required_points: number;
+  requiredPoints: number;
   multiplier: number;
 }
 
 interface LoyaltyTierPerk {
-  tier_name: string;
+  tierName: string;
   perk: string;
 }
 
 interface LoyaltyReward {
   id: number;
   name: string;
-  points_required: number;
+  pointsRequired: number;
   description: string;
-  validity_days: number;
+  validityDays: number;
   type: string;
   value: number;
-  is_active: boolean;
+  isActive: boolean;
+  createdAt: Date;
 }
 
 interface PrismaLoyaltyReward {
@@ -72,7 +74,7 @@ interface PrismaLoyaltyTier {
 
 interface PrismaLoyaltyTransaction {
   id: number;
-  user_id: number;
+  userId: number;
   type: 'Earned' | 'Redeemed' | 'Cancelled' | 'Expired';
   points: number;
   description: string;
@@ -81,9 +83,9 @@ interface PrismaLoyaltyTransaction {
 }
 
 interface LoyaltyEnrollment {
-  user_id: number;
-  tier_name: string;
-  enrolled_at: Date;
+  userId: number;
+  tierName: string;
+  enrolledAt: Date;
 }
 
 interface PrismaLoyaltyCoupon {
@@ -96,7 +98,12 @@ interface PrismaLoyaltyCoupon {
 
 const calculateTotalPoints = (transactions: LoyaltyTransaction[]): number => {
   return transactions.reduce((sum: number, t: LoyaltyTransaction) => {
-    return sum + (t.type === 'Earned' ? t.points : -t.points);
+    if (t.type === 'Earned') {
+      return sum + t.points;
+    } else if (t.type === 'Redeemed' || t.type === 'Cancelled' || t.type === 'Expired') {
+      return sum - t.points;
+    }
+    return sum;
   }, 0);
 };
 
@@ -108,19 +115,19 @@ export const loyaltyController = {
         throw new AppError('User not authenticated', 401);
       }
 
-      const enrollment = await prisma.loyalty_enrollments.findUnique({
-        where: { user_id: userId }
+      const enrollment = await prisma.loyaltyEnrollment.findUnique({
+        where: { userId }
       });
 
       if (!enrollment) {
         throw new AppError('User not enrolled in loyalty program', 404);
       }
 
-      const tier = await prisma.loyalty_tiers.findUnique({
-        where: { name: enrollment.tier_name },
+      const tier = await prisma.loyaltyTier.findUnique({
+        where: { name: enrollment.tierName },
         select: {
           name: true,
-          required_points: true,
+          requiredPoints: true,
           multiplier: true
         }
       });
@@ -129,51 +136,53 @@ export const loyaltyController = {
         throw new AppError('Tier not found', 404);
       }
 
-      const perks = await prisma.loyalty_tier_perks.findMany({
-        where: { tier_name: tier.name },
+      const perks = await prisma.loyaltyTierPerk.findMany({
+        where: { tierName: tier.name },
         select: {
-          tier_name: true,
+          tierName: true,
           perk: true
         }
       });
 
-      const transactions = await prisma.loyalty_transactions.findMany({
-        where: { user_id: userId },
+      const transactions = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
         select: {
           id: true,
-          user_id: true,
+          userId: true,
           type: true,
           points: true,
           description: true,
           status: true,
-          date: true
+          date: true,
+          createdAt: true
         }
       });
 
-      const mappedTransactions: LoyaltyTransaction[] = transactions.map((t: PrismaLoyaltyTransaction) => ({
-        id: Number(t.id),
-        user_id: Number(t.user_id),
-        type: t.type as 'Earned' | 'Redeemed',
-        points: Number(t.points),
+      const mappedTransactions = transactions.map((t) => ({
+        id: t.id,
+        userId: t.userId,
+        type: t.type,
+        points: t.points,
         description: t.description,
         status: t.status,
-        date: t.date
+        date: t.date,
+        createdAt: t.createdAt
       }));
 
       const totalPoints = calculateTotalPoints(mappedTransactions);
 
-      const nextTier = await prisma.loyalty_tiers.findFirst({
+      const nextTier = await prisma.loyaltyTier.findFirst({
         where: {
-          required_points: {
-            gt: Number(tier.required_points)
+          requiredPoints: {
+            gt: tier.requiredPoints
           }
         },
         orderBy: {
-          required_points: 'asc'
+          requiredPoints: 'asc'
         },
         select: {
           name: true,
-          required_points: true,
+          requiredPoints: true,
           multiplier: true
         }
       });
@@ -182,7 +191,7 @@ export const loyaltyController = {
         tier: {
           name: tier.name,
           multiplier: Number(tier.multiplier),
-          perks: perks.map((p: LoyaltyTierPerk) => p.perk)
+          perks: perks.map((p) => p.perk)
         },
         points: {
           available: totalPoints,
@@ -193,7 +202,7 @@ export const loyaltyController = {
       if (nextTier) {
         status.nextTier = {
           name: nextTier.name,
-          required_points: Number(nextTier.required_points),
+          requiredPoints: nextTier.requiredPoints,
           multiplier: Number(nextTier.multiplier)
         };
       }
@@ -220,9 +229,9 @@ export const loyaltyController = {
       res.json({
         title: `Welcome to ${status.tier.name} Tier!`,
         description: `You have ${status.points.available} points available.`,
-        ctaText: status.nextTier ? `Earn ${status.nextTier.required_points - status.points.available} more points to reach ${status.nextTier.name} Tier` : 'You have reached the highest tier!',
+        ctaText: status.nextTier ? `Earn ${status.nextTier.requiredPoints - status.points.available} more points to reach ${status.nextTier.name} Tier` : 'You have reached the highest tier!',
         ctaLink: status.nextTier ? '/products' : null,
-        pointsToNextTier: status.nextTier ? status.nextTier.required_points - status.points.available : null,
+        pointsToNextTier: status.nextTier ? status.nextTier.requiredPoints - status.points.available : null,
         currentTier: status.tier.name,
         nextTier: status.nextTier?.name
       });
@@ -241,25 +250,14 @@ export const loyaltyController = {
         throw new AppError('User not authenticated', 401);
       }
 
-      const transactions = await prisma.loyalty_transactions.findMany({
-        where: {
-          user_id: userId
-        },
+      const transactions = await prisma.loyaltyTransaction.findMany({
+        where: { userId },
         orderBy: {
           date: 'desc'
         }
       });
 
-      res.json({
-        transactions: transactions.map((t: PrismaLoyaltyTransaction) => ({
-          id: t.id,
-          date: t.date,
-          type: t.type,
-          points: t.points,
-          description: t.description,
-          status: t.status
-        }))
-      });
+      res.json(transactions);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -268,72 +266,35 @@ export const loyaltyController = {
     }
   },
 
-  getAvailableCoupons: async (req: Request, res: Response) => {
+  getLoyaltyCoupons: async (req: Request, res: Response) => {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        throw new AppError('User not authenticated', 401);
-      }
-
-      const coupons = await prisma.coupons.findMany({
+      const coupons = await prisma.coupon.findMany({
         where: {
-          is_used: false,
-          expires_at: {
+          isUsed: false,
+          expiresAt: {
             gt: new Date()
           }
         }
       });
 
-      res.json({
-        coupons: coupons.map((c: PrismaLoyaltyCoupon) => ({
-          id: c.id,
-          code: c.code,
-          value: c.value,
-          type: c.type,
-          expiresAt: c.expires_at
-        }))
-      });
+      res.json(coupons);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to get available coupons', 500);
+      throw new AppError('Failed to get loyalty coupons', 500);
     }
   },
 
-  getLoyaltyRewards: async (req: Request, res: Response): Promise<void> => {
+  getLoyaltyRewards: async (req: Request, res: Response) => {
     try {
-      const rewards = await prisma.loyalty_rewards.findMany({
+      const rewards = await prisma.loyaltyReward.findMany({
         where: {
-          is_active: true
-        },
-        orderBy: {
-          points_required: 'asc'
-        },
-        select: {
-          id: true,
-          name: true,
-          points_required: true,
-          description: true,
-          validity_days: true,
-          type: true,
-          value: true,
-          is_active: true
+          isActive: true
         }
       });
 
-      const mappedRewards = rewards.map((r: PrismaLoyaltyReward) => ({
-        id: Number(r.id),
-        name: r.name,
-        points: Number(r.points_required),
-        description: r.description,
-        validity: r.validity_days,
-        type: r.type,
-        value: Number(r.value),
-        is_active: r.is_active
-      }));
-
-      res.status(200).json({ rewards: mappedRewards });
+      res.json(rewards);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -342,21 +303,18 @@ export const loyaltyController = {
     }
   },
 
-  redeemPoints: async (req: Request, res: Response) => {
+  redeemReward: async (req: Request, res: Response) => {
     try {
-      const userId = Number(req.user?.id);
-      if (!userId || isNaN(userId)) {
+      const { rewardId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
         throw new AppError('User not authenticated', 401);
       }
 
-      const { rewardId } = req.body;
-      if (!rewardId) {
-        throw new AppError('Reward ID is required', 400);
-      }
-
       // Get reward details
-      const reward = await prisma.loyalty_rewards.findUnique({
-        where: { id: Number(rewardId) }
+      const reward = await prisma.loyaltyReward.findUnique({
+        where: { id: parseInt(rewardId) }
       });
 
       if (!reward) {
@@ -364,23 +322,23 @@ export const loyaltyController = {
       }
 
       // Get user's current points
-      const transactions = await prisma.loyalty_transactions.findMany({
-        where: { user_id: userId }
+      const transactions = await prisma.loyaltyTransaction.findMany({
+        where: { userId }
       });
 
-      const availablePoints = calculateTotalPoints(transactions);
+      const totalPoints = calculateTotalPoints(transactions);
 
-      if (availablePoints < reward.points_required) {
+      if (totalPoints < reward.pointsRequired) {
         throw new AppError('Insufficient points', 400);
       }
 
       // Create redemption transaction
-      const transaction = await prisma.loyalty_transactions.create({
+      const transaction = await prisma.loyaltyTransaction.create({
         data: {
-          user_id: userId,
+          userId,
           type: 'Redeemed',
-          points: reward.points_required,
-          description: `Redeemed: ${reward.name}`,
+          points: reward.pointsRequired,
+          description: `Redeemed ${reward.name}`,
           status: 'Completed',
           date: new Date()
         }
@@ -388,21 +346,14 @@ export const loyaltyController = {
 
       res.json({
         success: true,
-        message: 'Points redeemed successfully',
-        transaction: {
-          id: transaction.id,
-          type: transaction.type,
-          points: transaction.points,
-          description: transaction.description,
-          status: transaction.status,
-          date: transaction.date
-        }
+        transaction,
+        reward
       });
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError('Failed to redeem points', 500);
+      throw new AppError('Failed to redeem reward', 500);
     }
   },
 
@@ -414,8 +365,8 @@ export const loyaltyController = {
       }
 
       // Check if user is already enrolled
-      const existingEnrollment = await prisma.loyalty_enrollments.findUnique({
-        where: { user_id: userId }
+      const existingEnrollment = await prisma.loyaltyEnrollment.findUnique({
+        where: { userId: userId }
       });
 
       if (existingEnrollment) {
@@ -423,8 +374,8 @@ export const loyaltyController = {
       }
 
       // Get base tier
-      const baseTier = await prisma.loyalty_tiers.findFirst({
-        where: { required_points: 0 }
+      const baseTier = await prisma.loyaltyTier.findFirst({
+        where: { requiredPoints: 0 }
       });
 
       if (!baseTier) {
@@ -432,17 +383,17 @@ export const loyaltyController = {
       }
 
       // Create enrollment
-      await prisma.loyalty_enrollments.create({
+      await prisma.loyaltyEnrollment.create({
         data: {
-          user_id: userId,
-          tier_name: baseTier.name,
-          enrolled_at: new Date()
+          userId: userId,
+          tierName: baseTier.name,
+          enrolledAt: new Date()
         }
       });
 
       // Get tier perks
-      const perks = await prisma.loyalty_tier_perks.findMany({
-        where: { tier_name: baseTier.name }
+      const perks = await prisma.loyaltyTierPerk.findMany({
+        where: { tierName: baseTier.name }
       });
 
       res.json({
@@ -503,13 +454,13 @@ export const loyaltyController = {
       const { points } = req.body;
       const tiers = await prisma.loyaltyTier.findMany({
         orderBy: {
-          required_points: 'asc'
+          requiredPoints: 'asc'
         }
       });
 
       let currentTier = null;
       for (const tier of tiers) {
-        if (points >= tier.required_points) {
+        if (points >= tier.requiredPoints) {
           currentTier = tier;
         } else {
           break;
@@ -525,21 +476,30 @@ export const loyaltyController = {
 
   async createTransaction(req: Request, res: Response) {
     try {
-      const { user_id, type, points, description } = req.body;
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new AppError('User not authenticated', 401);
+      }
+
+      const { type, points, description, status } = req.body;
+
       const transaction = await prisma.loyaltyTransaction.create({
         data: {
-          user_id,
+          userId: Number(userId),
+          date: new Date(),
           type,
           points,
           description,
-          status: 'Pending'
+          status
         }
       });
 
       res.status(201).json(transaction);
     } catch (error) {
-      console.error('Error creating loyalty transaction:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to create loyalty transaction', 500);
     }
   },
 
@@ -556,6 +516,112 @@ export const loyaltyController = {
     } catch (error) {
       console.error('Error updating transaction status:', error);
       res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+
+  getAvailableCoupons: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id ? Number(req.user.id) : null;
+      if (!userId || isNaN(userId)) {
+        throw new AppError('User not authenticated', 401);
+      }
+
+      const coupons = await prisma.coupon.findMany({
+        where: {
+          userId,
+          expiresAt: {
+            gt: new Date()
+          },
+          isUsed: false
+        },
+        select: {
+          id: true,
+          code: true,
+          value: true,
+          type: true,
+          expiresAt: true
+        }
+      });
+
+      res.status(200).json(coupons);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to get available coupons', 500);
+    }
+  },
+
+  redeemPoints: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id ? Number(req.user.id) : null;
+      if (!userId || isNaN(userId)) {
+        throw new AppError('User not authenticated', 401);
+      }
+
+      const { points, rewardId } = req.body;
+      
+      if (!points || !rewardId) {
+        throw new AppError('Points and reward ID are required', 400);
+      }
+
+      // Get user's current points
+      const status = await loyaltyController.getLoyaltyStatus(req, res);
+      
+      if (status.points.available < points) {
+        throw new AppError('Insufficient points', 400);
+      }
+
+      // Get the reward details
+      const reward = await prisma.loyaltyReward.findUnique({
+        where: { id: rewardId }
+      });
+
+      if (!reward) {
+        throw new AppError('Reward not found', 404);
+      }
+
+      if (!reward.isActive) {
+        throw new AppError('Reward is not active', 400);
+      }
+
+      // Create transaction for points redemption
+      await prisma.loyaltyTransaction.create({
+        data: {
+          userId,
+          type: 'Redeemed',
+          points: points,
+          description: `Redeemed ${points} points for reward: ${reward.name}`,
+          status: 'Completed',
+          date: new Date()
+        }
+      });
+
+      // Create coupon for the reward
+      const coupon = await prisma.coupon.create({
+        data: {
+          code: `LOYALTY-${Date.now()}`,
+          value: reward.value,
+          type: reward.type,
+          expiresAt: new Date(Date.now() + reward.validityDays * 24 * 60 * 60 * 1000),
+          isUsed: false
+        }
+      });
+
+      res.status(200).json({
+        message: 'Points redeemed successfully',
+        coupon: {
+          code: coupon.code,
+          value: coupon.value,
+          type: coupon.type,
+          expiresAt: coupon.expiresAt
+        }
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError('Failed to redeem points', 500);
     }
   }
 }; 

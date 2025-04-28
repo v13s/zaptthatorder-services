@@ -1,5 +1,6 @@
 import express from 'express';
 import { loyaltyController } from '../controllers/loyalty.controller';
+import { couponController } from '../controllers/coupon.controller';
 import { authenticate } from '../middleware/auth.middleware';
 
 const router = express.Router();
@@ -13,8 +14,8 @@ router.get('/banner', authenticate, loyaltyController.getLoyaltyBanner);
 // Get loyalty transactions
 router.get('/transactions', authenticate, loyaltyController.getLoyaltyTransactions);
 
-// Get available coupons
-router.get('/coupons', authenticate, loyaltyController.getAvailableCoupons);
+// Get loyalty coupons
+router.get('/coupons', authenticate, couponController.getLoyaltyCoupons);
 
 // Loyalty tier routes
 router.get('/tiers', loyaltyController.getAllTiers);

@@ -84,6 +84,7 @@ CREATE TABLE coupons (
     code VARCHAR(50) UNIQUE NOT NULL,
     value DECIMAL(10,2) NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('Percentage', 'Fixed')),
+    source VARCHAR(50) NOT NULL CHECK (source IN ('Loyalty', 'Promotion', 'Birthday', 'Other')),
     expires_at TIMESTAMP NOT NULL,
     is_used BOOLEAN DEFAULT FALSE
 );
@@ -224,10 +225,10 @@ INSERT INTO loyalty_transactions (date, type, points, description, status) VALUE
 ('2025-03-15T10:30:00Z', 'Redeemed', 1000, 'Coupon: $10 off', 'Completed');
 
 -- Insert Coupons
-INSERT INTO coupons (code, value, type, expires_at, is_used) VALUES
-('LOYALTY5', 5.00, 'Fixed', '2025-05-30T23:59:59Z', FALSE),
-('LOYALTY10PCT', 10.00, 'Percentage', '2025-05-15T23:59:59Z', FALSE),
-('BIRTHDAY20', 20.00, 'Percentage', '2025-06-01T23:59:59Z', FALSE);
+INSERT INTO coupons (code, value, type, source, expires_at, is_used) VALUES
+('LOYALTY5', 5.00, 'Fixed', 'Loyalty', '2025-05-30T23:59:59Z', FALSE),
+('LOYALTY10PCT', 10.00, 'Percentage', 'Promotion', '2025-05-15T23:59:59Z', FALSE),
+('BIRTHDAY20', 20.00, 'Percentage', 'Birthday', '2025-06-01T23:59:59Z', FALSE);
 
 -- Create Indexes for better query performance
 -- These indexes will be added post-development based on query patterns

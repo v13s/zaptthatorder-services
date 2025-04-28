@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Product } from '@prisma/client';
-import { AppError } from '../utils/error';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { AppError } from '../middleware/error.middleware';
 
 const prisma = new PrismaClient();
 
@@ -56,16 +56,16 @@ export const cartController = {
       });
 
       if (!cart) {
-        return res.json({
-          items: [],
-          subtotal: 0,
-          total: 0,
-          estimatedLoyaltyPoints: 0
-        });
+        throw new AppError('Cart not found', 404);
       }
 
       res.json({
-        items: cart.items.map((item: { id: number; productId: number; quantity: number; size: string | null; color: string | null; product: { id: number; name: string; price: any; originalPrice: any | null; image: string } }): CartItemResponse => ({
+        id: cart.id,
+        userId: cart.userId,
+        subtotal: Number(cart.subtotal),
+        total: Number(cart.total),
+        estimatedLoyaltyPoints: cart.estimatedLoyaltyPoints,
+        items: cart.items.map((item: { id: number; productId: number; quantity: number; size: string | null; color: string | null; product: { id: number; name: string; price: Prisma.Decimal; originalPrice: Prisma.Decimal | null; image: string; loyaltyPoints: number } }) => ({
           id: item.id,
           productId: item.productId,
           quantity: item.quantity,
@@ -79,10 +79,7 @@ export const cartController = {
             image: item.product.image,
             loyaltyPoints: item.product.loyaltyPoints
           }
-        })),
-        subtotal: Number(cart.subtotal),
-        total: Number(cart.total),
-        estimatedLoyaltyPoints: cart.estimatedLoyaltyPoints
+        }))
       });
     } catch (error) {
       if (error instanceof AppError) {
@@ -119,8 +116,23 @@ export const cartController = {
 
       // Add item to cart
       const product = await prisma.product.findUnique({
-        where: { id: productId }
-      });
+        where: { id: productId },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          originalPrice: true,
+          image: true,
+          loyaltyPoints: true
+        }
+      }) as {
+        id: number;
+        name: string;
+        price: any;
+        originalPrice: any | null;
+        image: string;
+        loyaltyPoints: number;
+      };
 
       if (!product) {
         throw new AppError('Product not found', 404);
@@ -168,8 +180,7 @@ export const cartController = {
           name: item.product.name,
           price: Number(item.product.price),
           originalPrice: item.product.originalPrice ? Number(item.product.originalPrice) : null,
-          image: item.product.image,
-          loyaltyPoints: item.product.loyaltyPoints
+          image: item.product.image
         }
       });
     } catch (error) {

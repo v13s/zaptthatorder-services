@@ -53,6 +53,7 @@ export const authService = {
     if (joinLoyalty) {
       await prisma.loyaltyTransaction.create({
         data: {
+          userId: user.id,
           date: new Date(),
           type: 'Earned',
           points: 0,
@@ -147,6 +148,7 @@ export const authService = {
       if (joinLoyalty) {
         await prisma.loyaltyTransaction.create({
           data: {
+            userId: user.id,
             date: new Date(),
             type: 'Earned',
             points: 0,
