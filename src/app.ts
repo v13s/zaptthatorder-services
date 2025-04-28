@@ -8,7 +8,7 @@ import { loyaltyRoutes } from './routes/loyalty.routes';
 import { couponRoutes } from './routes/coupon.routes';
 import { profileRoutes } from './routes/profile.routes';
 import { orderRoutes } from './routes/order.routes';
-import { cartRoutes } from './routes/cart.routes';
+import cartRoutes from './routes/cart.routes';
 import { shippingRoutes } from './routes/shipping.routes';
 import { paymentRoutes } from './routes/payment.routes';
 import { errorHandler } from './middleware/error.middleware';

@@ -44,7 +44,7 @@ export const userController = {
     });
 
     if (!user) {
-      throw new AppError(404, 'User not found');
+      throw new AppError('User not found',404);
     }
 
     res.json(user);
@@ -108,7 +108,7 @@ export const userController = {
     });
 
     if (!cart) {
-      throw new AppError(404, 'Cart not found');
+      throw new AppError('Cart not found',404);
     }
 
     res.json(cart);

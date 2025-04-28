@@ -28,7 +28,7 @@ export const reviewController = {
     });
 
     if (!review) {
-      throw new AppError(404, 'Review not found');
+      throw new AppError('Review not found',404);
     }
 
     res.json(review);

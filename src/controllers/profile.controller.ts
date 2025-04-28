@@ -7,7 +7,15 @@ const prisma = new PrismaClient();
 interface AuthenticatedRequest extends Request {
   user?: {
     id: number;
+    email: string;
   };
+}
+
+interface SocialLink {
+  id: number;
+  platform: string;
+  url: string;
+  isPublic: boolean;
 }
 
 export const profileController = {
@@ -16,18 +24,17 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: {
           id: true,
-          name: true,
           email: true,
+          name: true,
           phone: true,
           address: true,
-          profileImage: true,
           socialLinks: true,
           createdAt: true,
           updatedAt: true,
@@ -35,7 +42,7 @@ export const profileController = {
       });
 
       if (!user) {
-        throw new AppError(404, 'User not found');
+        throw new AppError('User not found', 404);
       }
 
       res.json(user);
@@ -43,7 +50,7 @@ export const profileController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to get profile');
+      throw new AppError('Failed to get profile', 500);
     }
   },
 
@@ -52,7 +59,7 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
       const { name, email, phone, address } = req.body;
@@ -67,11 +74,10 @@ export const profileController = {
         },
         select: {
           id: true,
-          name: true,
           email: true,
+          name: true,
           phone: true,
           address: true,
-          profileImage: true,
           socialLinks: true,
           createdAt: true,
           updatedAt: true,
@@ -83,7 +89,7 @@ export const profileController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to update profile');
+      throw new AppError('Failed to update profile', 500);
     }
   },
 
@@ -92,7 +98,7 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
       const user = await prisma.user.findUnique({
@@ -102,16 +108,17 @@ export const profileController = {
         },
       });
 
-      if (!user) {
-        throw new AppError(404, 'User not found');
+      if (!user || !user.socialLinks) {
+        throw new AppError('User not found or no social links', 404);
       }
 
-      res.json({ links: user.socialLinks });
+      const socialLinks = JSON.parse(JSON.stringify(user.socialLinks)) as SocialLink[];
+      res.json({ links: socialLinks });
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to get social links');
+      throw new AppError('Failed to get social links', 500);
     }
   },
 
@@ -120,33 +127,41 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
       const { platform, url, isPublic } = req.body;
 
-      const user = await prisma.user.update({
+      const user = await prisma.user.findUnique({
         where: { id: userId },
-        data: {
-          socialLinks: {
-            push: {
-              platform,
-              url,
-              isPublic,
-            },
-          },
-        },
         select: {
           socialLinks: true,
         },
       });
 
-      res.status(201).json({ links: user.socialLinks });
+      const socialLinks = user?.socialLinks ? JSON.parse(JSON.stringify(user.socialLinks)) as SocialLink[] : [];
+      const newLink = {
+        id: Date.now(),
+        platform,
+        url,
+        isPublic: isPublic !== undefined ? isPublic : true,
+      };
+
+      const updatedLinks = [...socialLinks, newLink];
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          socialLinks: updatedLinks as any,
+        },
+      });
+
+      res.status(201).json({ link: newLink });
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to add social link');
+      throw new AppError('Failed to add social link', 500);
     }
   },
 
@@ -155,7 +170,7 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
       const { linkId } = req.params;
@@ -168,11 +183,12 @@ export const profileController = {
         },
       });
 
-      if (!user) {
-        throw new AppError(404, 'User not found');
+      if (!user || !user.socialLinks) {
+        throw new AppError('User not found or no social links', 404);
       }
 
-      const updatedLinks = user.socialLinks.map((link: any) => {
+      const socialLinks = JSON.parse(JSON.stringify(user.socialLinks)) as SocialLink[];
+      const updatedLinks = socialLinks.map((link) => {
         if (link.id === parseInt(linkId)) {
           return {
             ...link,
@@ -186,7 +202,7 @@ export const profileController = {
       await prisma.user.update({
         where: { id: userId },
         data: {
-          socialLinks: updatedLinks,
+          socialLinks: updatedLinks as any,
         },
       });
 
@@ -195,7 +211,7 @@ export const profileController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to update social link');
+      throw new AppError('Failed to update social link', 500);
     }
   },
 
@@ -204,7 +220,7 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
       const { linkId } = req.params;
@@ -216,18 +232,19 @@ export const profileController = {
         },
       });
 
-      if (!user) {
-        throw new AppError(404, 'User not found');
+      if (!user || !user.socialLinks) {
+        throw new AppError('User not found or no social links', 404);
       }
 
-      const updatedLinks = user.socialLinks.filter(
-        (link: any) => link.id !== parseInt(linkId)
+      const socialLinks = JSON.parse(JSON.stringify(user.socialLinks)) as SocialLink[];
+      const updatedLinks = socialLinks.filter(
+        (link) => link.id !== parseInt(linkId)
       );
 
       await prisma.user.update({
         where: { id: userId },
         data: {
-          socialLinks: updatedLinks,
+          socialLinks: updatedLinks as any,
         },
       });
 
@@ -236,7 +253,7 @@ export const profileController = {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to delete social link');
+      throw new AppError('Failed to delete social link', 500);
     }
   },
 
@@ -245,27 +262,44 @@ export const profileController = {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        throw new AppError(401, 'User not authenticated');
+        throw new AppError('User not authenticated', 401);
       }
 
-      const { imageUrl } = req.body;
+      const imageUrl = req.body.imageUrl;
+      if (!imageUrl) {
+        throw new AppError('Image URL is required', 400);
+      }
 
-      const user = await prisma.user.update({
+      // Since there's no image field in the User model, we'll store it in socialLinks
+      const user = await prisma.user.findUnique({
         where: { id: userId },
-        data: {
-          profileImage: imageUrl,
-        },
         select: {
-          profileImage: true,
+          socialLinks: true,
         },
       });
 
-      res.json(user);
+      const socialLinks = user?.socialLinks ? JSON.parse(JSON.stringify(user.socialLinks)) as SocialLink[] : [];
+      const updatedLinks = [...socialLinks, { id: Date.now(), platform: 'profile_image', url: imageUrl, isPublic: true }];
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          socialLinks: updatedLinks as any,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          socialLinks: true,
+        },
+      });
+
+      res.json(updatedUser);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(500, 'Failed to update profile image');
+      throw new AppError('Failed to update profile image', 500);
     }
   },
 }; 
